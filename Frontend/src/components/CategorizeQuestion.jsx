@@ -1,0 +1,364 @@
+import React, { useState, useEffect } from 'react';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { Trash2, Plus, Palette } from 'lucide-react';
+
+// Component for the form builder - editing categories and items
+export const CategorizeQuestionBuilder = ({ config, onUpdate }) => {
+  const [categories, setCategories] = useState(config?.categories || []);
+  const [items, setItems] = useState(config?.items || []);
+
+  // Color options for categories
+  const colorOptions = [
+    '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+    '#06B6D4', '#84CC16', '#F97316', '#EC4899', '#6B7280'
+  ];
+
+  useEffect(() => {
+    onUpdate({
+      ...config,
+      categories,
+      items
+    });
+  }, [categories, items]);
+
+  const addCategory = () => {
+    const newCategory = {
+      id: `cat-${Date.now()}`,
+      label: `Category ${categories.length + 1}`,
+      color: colorOptions[categories.length % colorOptions.length]
+    };
+    setCategories([...categories, newCategory]);
+  };
+
+  const updateCategory = (id, updates) => {
+    setCategories(cats => cats.map(cat => 
+      cat.id === id ? { ...cat, ...updates } : cat
+    ));
+  };
+
+  const deleteCategory = (id) => {
+    setCategories(cats => cats.filter(cat => cat.id !== id));
+    // Update items that referenced this category
+    setItems(items => items.map(item => 
+      item.correctCategory === id ? { ...item, correctCategory: categories[0]?.id || '' } : item
+    ));
+  };
+
+  const addItem = () => {
+    const newItem = {
+      id: `item-${Date.now()}`,
+      text: `Item ${items.length + 1}`,
+      correctCategory: categories[0]?.id || ''
+    };
+    setItems([...items, newItem]);
+  };
+
+  const updateItem = (id, updates) => {
+    setItems(items => items.map(item => 
+      item.id === id ? { ...item, ...updates } : item
+    ));
+  };
+
+  const deleteItem = (id) => {
+    setItems(items => items.filter(item => item.id !== id));
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Categories Section */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-medium text-gray-900">Categories</h4>
+          <button
+            onClick={addCategory}
+            className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Add Category
+          </button>
+        </div>
+        
+        <div className="space-y-2">
+          {categories.map((category, index) => (
+            <div key={category.id} className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <div 
+                  className="w-6 h-6 rounded-full cursor-pointer border-2 border-white shadow-md"
+                  style={{ backgroundColor: category.color }}
+                  title="Click to change color"
+                />
+                <select
+                  value={category.color}
+                  onChange={(e) => updateCategory(category.id, { color: e.target.value })}
+                  className="sr-only"
+                >
+                  {colorOptions.map(color => (
+                    <option key={color} value={color}>{color}</option>
+                  ))}
+                </select>
+                {/* Color picker buttons */}
+                <div className="flex space-x-1">
+                  {colorOptions.slice(0, 5).map(color => (
+                    <button
+                      key={color}
+                      onClick={() => updateCategory(category.id, { color })}
+                      className="w-4 h-4 rounded-full border border-gray-300 hover:scale-110 transition-transform"
+                      style={{ backgroundColor: color }}
+                      title={`Change to ${color}`}
+                    />
+                  ))}
+                </div>
+              </div>
+              
+              <input
+                type="text"
+                value={category.label}
+                onChange={(e) => updateCategory(category.id, { label: e.target.value })}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Category name"
+              />
+              
+              <button
+                onClick={() => deleteCategory(category.id)}
+                className="p-2 text-gray-400 hover:text-red-600 rounded-lg"
+                disabled={categories.length <= 1}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Items Section */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-medium text-gray-900">Items to Categorize</h4>
+          <button
+            onClick={addItem}
+            className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center"
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Add Item
+          </button>
+        </div>
+        
+        <div className="space-y-2">
+          {items.map((item, index) => (
+            <div key={item.id} className="flex items-center space-x-3 p-3 border border-gray-200 rounded-lg">
+              <span className="text-sm text-gray-500 w-8">#{index + 1}</span>
+              
+              <input
+                type="text"
+                value={item.text}
+                onChange={(e) => updateItem(item.id, { text: e.target.value })}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="Item text"
+              />
+              
+              <select
+                value={item.correctCategory}
+                onChange={(e) => updateItem(item.id, { correctCategory: e.target.value })}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[140px]"
+              >
+                <option value="">Select category</option>
+                {categories.map(cat => (
+                  <option key={cat.id} value={cat.id}>{cat.label}</option>
+                ))}
+              </select>
+              
+              <button
+                onClick={() => deleteItem(item.id)}
+                className="p-2 text-gray-400 hover:text-red-600 rounded-lg"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Preview */}
+      <div className="bg-gray-50 p-4 rounded-lg">
+        <h4 className="text-sm font-medium text-gray-700 mb-3">Preview:</h4>
+        <CategorizeQuestionPreview 
+          categories={categories} 
+          items={items}
+          disabled={true}
+        />
+      </div>
+
+      {/* Tips */}
+      <div className="bg-blue-50 p-4 rounded-lg">
+        <h4 className="text-sm font-medium text-blue-900 mb-2">💡 Tips for Categorize Questions:</h4>
+        <ul className="text-sm text-blue-800 space-y-1">
+          <li>• Create 2-5 meaningful categories with clear labels</li>
+          <li>• Add 4-12 items that clearly belong to specific categories</li>
+          <li>• Use different colors to help distinguish categories</li>
+          <li>• Set correct categories for automatic scoring</li>
+        </ul>
+      </div>
+    </div>
+  );
+};
+
+// Component for form preview and public forms - interactive categorization
+export const CategorizeQuestionPreview = ({ categories, items, onResponseChange, responses, disabled = false }) => {
+  const [localItems, setLocalItems] = useState(() => {
+    // Initialize items in "uncategorized" state or from responses
+    const uncategorizedItems = items?.map(item => ({
+      ...item,
+      currentCategory: responses?.[item.id] || null
+    })) || [];
+    return uncategorizedItems;
+  });
+
+  const handleDragEnd = (result) => {
+    if (disabled) return;
+    
+    const { destination, source, draggableId } = result;
+
+    if (!destination) return;
+
+    // If dropped in same position, do nothing
+    if (destination.droppableId === source.droppableId && destination.index === source.index) {
+      return;
+    }
+
+    // Update the item's category
+    const newItems = localItems.map(item => {
+      if (item.id === draggableId) {
+        const newCategory = destination.droppableId === 'uncategorized' ? null : destination.droppableId;
+        onResponseChange?.(item.id, newCategory);
+        return { ...item, currentCategory: newCategory };
+      }
+      return item;
+    });
+
+    setLocalItems(newItems);
+  };
+
+  const getItemsForCategory = (categoryId) => {
+    return localItems.filter(item => item.currentCategory === categoryId);
+  };
+
+  const getUncategorizedItems = () => {
+    return localItems.filter(item => !item.currentCategory);
+  };
+
+  return (
+    <DragDropContext onDragEnd={handleDragEnd}>
+      <div className="space-y-4">
+        {/* Items Pool */}
+        <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+          <h5 className="font-medium text-gray-700 mb-3">Items to Categorize:</h5>
+          <Droppable droppableId="uncategorized" direction="horizontal">
+            {(provided, snapshot) => (
+              <div
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+                className={`flex flex-wrap gap-2 min-h-[60px] p-2 rounded-lg transition-colors ${
+                  snapshot.isDraggingOver ? 'bg-gray-100' : 'bg-gray-50'
+                }`}
+              >
+                {getUncategorizedItems().map((item, index) => (
+                  <Draggable
+                    key={item.id}
+                    draggableId={item.id}
+                    index={index}
+                    isDragDisabled={disabled}
+                  >
+                    {(provided, snapshot) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.draggableProps}
+                        {...provided.dragHandleProps}
+                        className={`px-3 py-2 bg-white border border-gray-300 rounded-lg shadow-sm cursor-move transition-all ${
+                          snapshot.isDragging 
+                            ? 'shadow-lg transform rotate-2 opacity-90' 
+                            : 'hover:shadow-md'
+                        } ${disabled ? 'cursor-default opacity-60' : ''}`}
+                      >
+                        {item.text}
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {provided.placeholder}
+                {getUncategorizedItems().length === 0 && (
+                  <div className="text-gray-400 italic text-sm py-4">
+                    {disabled ? 'All items categorized' : 'Drag items here to uncategorize them'}
+                  </div>
+                )}
+              </div>
+            )}
+          </Droppable>
+        </div>
+
+        {/* Category Drop Zones */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {categories?.map(category => (
+            <div key={category.id} className="border-2 border-dashed rounded-lg p-4" style={{ borderColor: category.color }}>
+              <h5 className="font-medium mb-3" style={{ color: category.color }}>
+                {category.label}
+              </h5>
+              <Droppable droppableId={category.id}>
+                {(provided, snapshot) => (
+                  <div
+                    ref={provided.innerRef}
+                    {...provided.droppableProps}
+                    className={`min-h-[100px] p-2 rounded-lg transition-colors ${
+                      snapshot.isDraggingOver 
+                        ? 'bg-opacity-20' 
+                        : 'bg-opacity-10'
+                    }`}
+                    style={{ 
+                      backgroundColor: snapshot.isDraggingOver 
+                        ? category.color + '40' 
+                        : category.color + '20' 
+                    }}
+                  >
+                    <div className="space-y-2">
+                      {getItemsForCategory(category.id).map((item, index) => (
+                        <Draggable
+                          key={item.id}
+                          draggableId={item.id}
+                          index={index}
+                          isDragDisabled={disabled}
+                        >
+                          {(provided, snapshot) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              {...provided.dragHandleProps}
+                              className={`px-3 py-2 bg-white border rounded-lg shadow-sm cursor-move transition-all ${
+                                snapshot.isDragging 
+                                  ? 'shadow-lg transform rotate-2 opacity-90' 
+                                  : 'hover:shadow-md'
+                              } ${disabled ? 'cursor-default opacity-60' : ''}`}
+                              style={{ borderColor: category.color }}
+                            >
+                              {item.text}
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                    </div>
+                    {provided.placeholder}
+                    {getItemsForCategory(category.id).length === 0 && (
+                      <div className="text-gray-400 italic text-sm py-8 text-center">
+                        Drop items here
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Droppable>
+            </div>
+          ))}
+        </div>
+      </div>
+    </DragDropContext>
+  );
+};
+
+export default CategorizeQuestionPreview;

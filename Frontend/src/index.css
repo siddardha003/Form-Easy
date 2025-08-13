@@ -1,0 +1,37 @@
+/* Tailwind CSS is automatically injected by the Vite plugin */
+
+
+@import "tailwindcss";
+
+/* Add some basic styles */
+body {
+    margin: 0;
+    padding: 0;
+}
+
+/* Custom animations for consistent floating effects */
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes float-reverse {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(10px);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-float-reverse {
+  animation: float-reverse 3s ease-in-out infinite;
+}
