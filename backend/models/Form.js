@@ -9,7 +9,7 @@ const questionSchema = new mongoose.Schema({
   type: {
     type: String,
     required: true,
-    enum: ['categorize', 'cloze', 'comprehension']
+    enum: ['mcq', 'mca', 'categorize', 'cloze', 'comprehension', 'image']
   },
   title: {
     type: String,
@@ -42,6 +42,10 @@ const questionSchema = new mongoose.Schema({
       validator: function(config) {
         // Validate config based on question type
         switch (this.type) {
+          case 'mcq':
+          case 'mca':
+            return config.options && Array.isArray(config.options) &&
+                   config.options.length > 0;
           case 'categorize':
             return config.categories && config.items && 
                    Array.isArray(config.categories) && 
@@ -52,6 +56,8 @@ const questionSchema = new mongoose.Schema({
           case 'comprehension':
             return config.passage && config.subQuestions && 
                    Array.isArray(config.subQuestions);
+          case 'image':
+            return config.imageUrl || config.question;
           default:
             return false;
         }
@@ -208,6 +214,7 @@ formSchema.methods.getPublicData = function() {
       config: q.config
     })),
     settings: {
+      isPublished: this.settings.isPublished,
       showProgressBar: this.settings.showProgressBar,
       submissionMessage: this.settings.submissionMessage
     }

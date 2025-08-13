@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { formService } from '../../services/formService';
 import toast from 'react-hot-toast';
 import ImageUpload from '../../components/ImageUpload';
@@ -19,10 +19,37 @@ import {
 const FormPreview = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [form, setForm] = useState(null);
   const [loading, setLoading] = useState(true);
   const [responses, setResponses] = useState({});
   const [currentPage, setCurrentPage] = useState(0);
+
+  // Check if form data is passed from FormBuilder
+  const passedFormData = location.state?.formData;
+  const isPreviewMode = location.state?.isPreview;
+
+  useEffect(() => {
+    if (passedFormData && isPreviewMode) {
+      // Use the passed form data (current working version)
+      setForm(passedFormData);
+      initializeResponses(passedFormData);
+      setLoading(false);
+    } else if (id && id !== 'new') {
+      // Load from API (saved version)
+      loadForm();
+    } else {
+      setLoading(false);
+    }
+  }, [id, passedFormData, isPreviewMode]);
+
+  const initializeResponses = (formData) => {
+    const initialResponses = {};
+    formData.questions.forEach(q => {
+      initialResponses[q.id] = '';
+    });
+    setResponses(initialResponses);
+  };
 
   useEffect(() => {
     if (id) {
@@ -37,11 +64,7 @@ const FormPreview = () => {
       if (response.success) {
         setForm(response.data.form);
         // Initialize responses object
-        const initialResponses = {};
-        response.data.form.questions.forEach(q => {
-          initialResponses[q.id] = '';
-        });
-        setResponses(initialResponses);
+        initializeResponses(response.data.form);
       }
     } catch (error) {
       console.error('Error loading form:', error);
@@ -59,6 +82,10 @@ const FormPreview = () => {
   };
 
   const copyFormLink = () => {
+    if (isPreviewMode || id === 'new') {
+      toast.error('Please save and publish the form first to get the share link');
+      return;
+    }
     const link = `${window.location.origin}/form/${id}`;
     navigator.clipboard.writeText(link);
     toast.success('Form link copied to clipboard!');
@@ -270,32 +297,56 @@ const FormPreview = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <button
-                onClick={() => navigate('/dashboard')}
+                onClick={() => {
+                  if (isPreviewMode) {
+                    navigate(-1); // Go back to FormBuilder
+                  } else {
+                    navigate('/dashboard');
+                  }
+                }}
                 className="p-2 text-gray-400 hover:text-gray-600 rounded-lg"
               >
                 <ArrowLeft className="h-5 w-5" />
               </button>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">Form Preview</h1>
+                <div className="flex items-center space-x-2">
+                  <h1 className="text-xl font-bold text-gray-900">
+                    {isPreviewMode ? 'Form Preview' : 'Form Preview'}
+                  </h1>
+                  {isPreviewMode && (
+                    <span className="bg-orange-100 text-orange-800 text-xs font-medium px-2.5 py-0.5 rounded-full">
+                      Unsaved Changes
+                    </span>
+                  )}
+                </div>
                 <p className="text-sm text-gray-500">{form.title}</p>
               </div>
             </div>
 
             <div className="flex items-center space-x-3">
-              <button
-                onClick={copyFormLink}
-                className="flex items-center px-3 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                <Copy className="h-4 w-4 mr-2" />
-                Copy Link
-              </button>
-              <button
-                onClick={() => window.open(`/form/${id}`, '_blank')}
-                className="flex items-center px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
-              >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                Open Public Form
-              </button>
+              {!isPreviewMode && (
+                <>
+                  <button
+                    onClick={copyFormLink}
+                    className="flex items-center px-3 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
+                  >
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy Link
+                  </button>
+                  <button
+                    onClick={() => window.open(`/form/${id}`, '_blank')}
+                    className="flex items-center px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Open Public Form
+                  </button>
+                </>
+              )}
+              {isPreviewMode && (
+                <div className="text-sm text-gray-500 bg-gray-100 px-3 py-2 rounded-lg">
+                  💡 This is a preview of your current changes. Save the form to share it.
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -323,8 +374,25 @@ const FormPreview = () => {
               )}
             </div>
 
-            {/* Progress Bar */}
-            {form.settings.showProgressBar && form.questions.length > 1 && (
+            {/* No Questions Message */}
+            {(!form.questions || form.questions.length === 0) ? (
+              <div className="text-center py-12">
+                <div className="text-6xl mb-4">📝</div>
+                <h3 className="text-xl font-medium text-gray-900 mb-2">No Questions Yet</h3>
+                <p className="text-gray-600 mb-6">Add some questions to your form to see the preview.</p>
+                {isPreviewMode && (
+                  <button
+                    onClick={() => navigate(-1)}
+                    className="bg-blue-500 text-white px-6 py-2 rounded-lg hover:bg-blue-600 transition-colors"
+                  >
+                    Back to Form Builder
+                  </button>
+                )}
+              </div>
+            ) : (
+              <>
+                {/* Progress Bar */}
+                {form.settings?.showProgressBar && form.questions.length > 1 && (
               <div className="mb-8">
                 <div className="flex justify-between text-sm text-gray-600 mb-2">
                   <span>Progress</span>
@@ -375,13 +443,18 @@ const FormPreview = () => {
             <div className="mt-8 pt-8 border-t border-gray-200">
               <button
                 className="w-full bg-gradient-to-r from-blue-500 to-teal-400 text-white py-3 px-6 rounded-lg font-medium hover:shadow-lg transition-all"
+                disabled
               >
-                Submit Response (Preview Mode)
+                {isPreviewMode ? 'Preview Mode - Responses Not Saved' : 'Submit Response (Preview Mode)'}
               </button>
               <p className="text-sm text-gray-500 text-center mt-2">
-                This is a preview. Responses won't be saved.
+                {isPreviewMode 
+                  ? 'This is a preview of your current form. Save the form to collect real responses.' 
+                  : 'This is a preview. Responses won\'t be saved.'}
               </p>
             </div>
+            </>
+            )}
           </div>
         </div>
       </div>

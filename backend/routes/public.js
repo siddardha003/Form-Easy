@@ -1,19 +1,21 @@
 import express from 'express';
 import Form from '../models/Form.js';
-import { optionalAuth } from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// @desc    Get public form (for form filling)
+// @desc    Get public form (for form filling) - Now requires authentication
 // @route   GET /api/public/forms/:id
-// @access  Public
-router.get('/forms/:id', optionalAuth, async (req, res) => {
+// @access  Private (requires authentication)
+router.get('/forms/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`🔍 Form request for ID: ${id} by user: ${req.user.email}`);
 
     const form = await Form.findById(id);
 
     if (!form) {
+      console.log(`❌ Form not found for ID: ${id}`);
       return res.status(404).json({
         success: false,
         error: {
@@ -23,30 +25,34 @@ router.get('/forms/:id', optionalAuth, async (req, res) => {
       });
     }
 
-    // Check if form is published
+    console.log(`✅ Form found: ${form.title}, Published: ${form.settings.isPublished}`);
+
+    // Only allow access to published forms (no anonymous access)
     if (!form.settings.isPublished) {
-      // Only allow owner to view unpublished forms
-      if (!req.user || form.createdBy.toString() !== req.user._id.toString()) {
-        return res.status(403).json({
-          success: false,
-          error: {
-            code: 'FORM_NOT_PUBLISHED',
-            message: 'This form is not published'
-          }
-        });
-      }
+      console.log(`🔒 Form not published`);
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORM_NOT_PUBLISHED',
+          message: 'This form is not published'
+        }
+      });
     }
 
-    // Increment view count (only for non-owners)
-    if (!req.user || form.createdBy.toString() !== req.user._id.toString()) {
-      await form.incrementViews();
-    }
+    // Increment view count for authenticated access
+    await form.incrementViews();
+    console.log(`📊 View count incremented for form: ${form.title} by user: ${req.user.email}`);
 
-    // Return public form data
+    // Return form data with user context
     res.json({
       success: true,
       data: {
-        form: form.getPublicData()
+        form: form.getPublicData(),
+        user: {
+          id: req.user._id,
+          email: req.user.email,
+          name: req.user.name
+        }
       }
     });
   } catch (error) {

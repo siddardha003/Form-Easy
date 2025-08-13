@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Eye, EyeOff, Mail, Lock, ArrowRight } from 'lucide-react';
 
 const Signin = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, loading, error, clearError } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
@@ -12,6 +13,10 @@ const Signin = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Get redirect URL from query params
+  const searchParams = new URLSearchParams(location.search);
+  const redirectUrl = searchParams.get('redirect');
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -28,7 +33,9 @@ const Signin = () => {
     
     try {
       await login(formData);
-      navigate('/dashboard');
+      // Redirect to the original URL if available, otherwise go to dashboard
+      const targetUrl = redirectUrl ? decodeURIComponent(redirectUrl) : '/dashboard';
+      navigate(targetUrl);
     } catch (error) {
       // Error is handled by auth context
     } finally {
@@ -49,10 +56,17 @@ const Signin = () => {
           <h2 className="mt-6 text-3xl font-bold text-gray-900">
             Welcome back
           </h2>
+          {redirectUrl && (
+            <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                Sign in to access the form you were trying to view
+              </p>
+            </div>
+          )}
           <p className="mt-2 text-sm text-gray-600">
             Don't have an account?{' '}
             <Link
-              to="/auth/signup"
+              to={`/auth/signup${redirectUrl ? `?redirect=${redirectUrl}` : ''}`}
               className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
             >
               Sign up for free

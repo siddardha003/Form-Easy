@@ -124,9 +124,11 @@ export const getForm = async (req, res) => {
 export const createForm = async (req, res) => {
   try {
     const { title, description, headerImage, questions = [], settings = {} } = req.body;
+    console.log(`📝 Creating form: ${title}, Questions: ${questions.length}`);
 
     // Process questions and assign unique IDs
     const processedQuestions = questions.map((question, index) => {
+      console.log(`  - Question ${index + 1}: Type ${question.type}`);
       // Validate question configuration
       if (!validateQuestionConfig(question.type, question.config)) {
         throw new Error(`Invalid configuration for question ${index + 1} of type ${question.type}`);
@@ -235,13 +237,19 @@ export const updateForm = async (req, res) => {
       });
     }
 
+    // Process headerImage - extract URL if it's an object
+    let processedHeaderImage = headerImage;
+    if (headerImage && typeof headerImage === 'object') {
+      processedHeaderImage = headerImage.secure_url || headerImage.url;
+    }
+
     // Update form
     const updatedForm = await Form.findByIdAndUpdate(
       id,
       {
         ...(title && { title }),
         ...(description !== undefined && { description }),
-        ...(headerImage !== undefined && { headerImage }),
+        ...(headerImage !== undefined && { headerImage: processedHeaderImage }),
         ...(questions && { questions: processedQuestions }),
         ...(settings && { settings: { ...form.settings, ...settings } })
       },

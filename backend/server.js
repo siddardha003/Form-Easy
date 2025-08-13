@@ -1,9 +1,12 @@
+// Load environment variables FIRST
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import cookieParser from 'cookie-parser';
-import dotenv from 'dotenv';
 import connectDB from './config/database.js';
 import errorHandler from './middleware/errorHandler.js';
 import authRoutes from './routes/auth.js';
@@ -12,9 +15,6 @@ import publicRoutes from './routes/public.js';
 import responseRoutes from './routes/responses.js';
 import uploadRoutes from './routes/upload.js';
 import imageUploadRoutes from './routes/imageUpload.js';
-
-// Load environment variables
-dotenv.config();
 
 // Connect to database
 connectDB();
@@ -42,6 +42,12 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+
+// Request logging
+app.use((req, res, next) => {
+  console.log(`🌐 ${req.method} ${req.originalUrl}`);
+  next();
+});
 
 // Static files for uploads
 app.use('/uploads', express.static('uploads'));

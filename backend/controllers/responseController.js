@@ -4,10 +4,14 @@ import { getClientIP, paginate, createPaginationMeta } from '../utils/helpers.js
 
 // @desc    Submit form response
 // @route   POST /api/responses
-// @access  Public
+// @access  Private (requires authentication)
 export const submitResponse = async (req, res) => {
   try {
-    const { formId, answers, respondentEmail, respondentName, startedAt, totalTimeSpent } = req.body;
+    const { formId, answers, startedAt, totalTimeSpent } = req.body;
+    const user = req.user; // Now required from authentication
+
+    console.log(`📝 Response submission for form ${formId} by user ${user.email}`);
+    console.log('📤 Received answers:', JSON.stringify(answers, null, 2));
 
     // Get form to validate
     const form = await Form.findById(formId);
@@ -32,33 +36,20 @@ export const submitResponse = async (req, res) => {
       });
     }
 
-    // Validate required email if form requires it
-    if (form.settings.collectEmail && !respondentEmail) {
+    // Check for multiple submissions based on form settings
+    const existingResponse = await Response.findOne({
+      formId,
+      userId: user._id
+    });
+
+    if (existingResponse && !form.settings.allowMultipleSubmissions) {
       return res.status(400).json({
         success: false,
         error: {
-          code: 'EMAIL_REQUIRED',
-          message: 'Email is required for this form'
+          code: 'MULTIPLE_SUBMISSIONS_NOT_ALLOWED',
+          message: 'You have already submitted a response to this form'
         }
       });
-    }
-
-    // Check for multiple submissions if not allowed
-    if (!form.settings.allowMultipleSubmissions && respondentEmail) {
-      const existingResponse = await Response.findOne({
-        formId,
-        respondentEmail
-      });
-
-      if (existingResponse) {
-        return res.status(400).json({
-          success: false,
-          error: {
-            code: 'MULTIPLE_SUBMISSIONS_NOT_ALLOWED',
-            message: 'Multiple submissions are not allowed for this form'
-          }
-        });
-      }
     }
 
     // Validate answers against form questions
@@ -69,7 +60,51 @@ export const submitResponse = async (req, res) => {
     // Check if all required questions are answered
     for (const requiredQuestion of requiredQuestions) {
       const answer = answers.find(a => a.questionId === requiredQuestion.id);
-      if (!answer || !answer.answer) {
+      
+      console.log(`🔍 Checking required question: ${requiredQuestion.id} (${requiredQuestion.type})`);
+      console.log(`📝 Found answer:`, answer);
+      
+      if (!answer) {
+        console.log(`❌ Missing answer for required question: ${requiredQuestion.id}`);
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'REQUIRED_QUESTION_MISSING',
+            message: `Answer required for question: ${requiredQuestion.title}`
+          }
+        });
+      }
+      
+      // Validate based on question type
+      let isAnswered = false;
+      console.log(`🔍 Validating ${requiredQuestion.type} question, answer:`, answer.answer);
+      
+      switch (requiredQuestion.type) {
+        case 'mcq':
+          isAnswered = answer.answer && typeof answer.answer === 'string' && answer.answer.trim() !== '';
+          break;
+        case 'mca':
+          isAnswered = Array.isArray(answer.answer) && answer.answer.length > 0;
+          break;
+        case 'cloze':
+          isAnswered = answer.answer && typeof answer.answer === 'object' && Object.keys(answer.answer).length > 0;
+          console.log(`🔍 Cloze validation: isObject=${typeof answer.answer === 'object'}, hasKeys=${Object.keys(answer.answer || {}).length > 0}`);
+          break;
+        case 'categorize':
+          isAnswered = answer.answer && typeof answer.answer === 'object' && Object.keys(answer.answer).length > 0;
+          console.log(`🔍 Categorize validation: isObject=${typeof answer.answer === 'object'}, hasKeys=${Object.keys(answer.answer || {}).length > 0}`);
+          break;
+        case 'comprehension':
+          isAnswered = answer.answer && typeof answer.answer === 'object' && Object.keys(answer.answer).length > 0;
+          break;
+        default:
+          isAnswered = answer.answer && answer.answer.toString().trim() !== '';
+      }
+      
+      console.log(`✅ Question ${requiredQuestion.id} answered: ${isAnswered}`);
+      
+      if (!isAnswered) {
+        console.log(`❌ Required question not properly answered: ${requiredQuestion.id}`);
         return res.status(400).json({
           success: false,
           error: {
@@ -93,6 +128,20 @@ export const submitResponse = async (req, res) => {
       let processedAnswer = answer.answer;
 
       switch (question.type) {
+        case 'mcq':
+          // Answer should be a string (selected option ID)
+          if (typeof answer.answer !== 'string' || !answer.answer) {
+            isValidAnswer = false;
+          }
+          break;
+
+        case 'mca':
+          // Answer should be an array of selected option IDs
+          if (!Array.isArray(answer.answer) || answer.answer.length === 0) {
+            isValidAnswer = false;
+          }
+          break;
+
         case 'categorize':
           // Answer should be an object mapping item IDs to category IDs
           if (typeof answer.answer !== 'object' || answer.answer === null) {
@@ -114,13 +163,20 @@ export const submitResponse = async (req, res) => {
           break;
 
         case 'cloze':
-          // Answer should be an array of blank responses
-          if (!Array.isArray(answer.answer)) {
+          // Answer should be an object with blank responses (blank-0, blank-1, etc.)
+          if (typeof answer.answer !== 'object' || answer.answer === null) {
             isValidAnswer = false;
           } else {
-            // Validate that we have responses for all blanks
-            const expectedBlanks = question.config.blanks.length;
-            if (answer.answer.length !== expectedBlanks) {
+            // Validate that we have responses for the expected number of blanks
+            const text = question.config.text || '';
+            const blanks = text.match(/\{\{[^}]+\}\}/g) || [];
+            const expectedBlanks = blanks.length;
+            const answeredBlanks = Object.keys(answer.answer).filter(key => 
+              key.startsWith('blank-') && answer.answer[key] && answer.answer[key].trim() !== ''
+            ).length;
+            
+            // For required questions, all blanks must be filled
+            if (question.required && answeredBlanks < expectedBlanks) {
               isValidAnswer = false;
             }
           }
@@ -132,13 +188,22 @@ export const submitResponse = async (req, res) => {
             isValidAnswer = false;
           } else {
             // Validate sub-question answers
-            const subQuestions = question.config.subQuestions;
+            const subQuestions = question.config.subQuestions || [];
             for (const subQ of subQuestions) {
-              if (subQ.required && !answer.answer[subQ.id]) {
+              if (subQ.required && (!answer.answer[subQ.id] || 
+                  (Array.isArray(answer.answer[subQ.id]) && answer.answer[subQ.id].length === 0) ||
+                  (typeof answer.answer[subQ.id] === 'string' && answer.answer[subQ.id].trim() === ''))) {
                 isValidAnswer = false;
                 break;
               }
             }
+          }
+          break;
+
+        case 'image':
+          // Answer can be text or file reference
+          if (!answer.answer || (typeof answer.answer !== 'string' && typeof answer.answer !== 'object')) {
+            isValidAnswer = false;
           }
           break;
 
@@ -180,11 +245,12 @@ export const submitResponse = async (req, res) => {
     const answeredQuestions = processedAnswers.length;
     const completionPercentage = Math.round((answeredQuestions / totalQuestions) * 100);
 
-    // Create response
+    // Create response with user information
     const response = await Response.create({
       formId,
-      respondentEmail: respondentEmail || null,
-      respondentName: respondentName || null,
+      userId: user._id,
+      respondentEmail: user.email,
+      respondentName: `${user.firstName} ${user.lastName}`,
       answers: processedAnswers,
       startedAt: startedAt ? new Date(startedAt) : new Date(),
       totalTimeSpent: totalTimeSpent || 0,
@@ -193,6 +259,8 @@ export const submitResponse = async (req, res) => {
       ipAddress: getClientIP(req),
       userAgent: req.get('User-Agent') || null
     });
+
+    console.log(`✅ Response created with ID: ${response._id} for user: ${user.email}`);
 
     // Update form analytics
     const avgCompletionTime = totalTimeSpent || 0;

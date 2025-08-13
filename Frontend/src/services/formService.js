@@ -51,8 +51,20 @@ export const formService = {
 
   // Get public form (for form filling)
   getPublicForm: async (id) => {
-    const response = await api.get(`/public/forms/${id}`);
-    return response.data;
+    try {
+      const response = await api.get(`/public/forms/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching public form:', error);
+      // Return a structured error response instead of throwing
+      return {
+        success: false,
+        error: {
+          code: error.response?.data?.error?.code || 'UNKNOWN_ERROR',
+          message: error.response?.data?.error?.message || 'Failed to load form'
+        }
+      };
+    }
   },
 
   // Submit form response

@@ -13,16 +13,23 @@ export const authenticate = async (req, res, next) => {
   try {
     let token;
 
+    console.log('🔐 Auth middleware - checking token...');
+    console.log('Authorization header:', req.headers.authorization);
+    console.log('Cookies:', req.cookies);
+
     // Check for token in Authorization header
     if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
+      console.log('📝 Token found in Authorization header');
     }
     // Check for token in cookies (for browser requests)
     else if (req.cookies && req.cookies.token) {
       token = req.cookies.token;
+      console.log('🍪 Token found in cookies');
     }
 
     if (!token) {
+      console.log('❌ No token found');
       return res.status(401).json({
         success: false,
         error: {
