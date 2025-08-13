@@ -18,7 +18,13 @@ import {
   ChevronDown,
   Calendar,
   Users,
-  Award
+  Award,
+  Share2,
+  X,
+  Clock,
+  Mail,
+  Lock,
+  BarChart
 } from 'lucide-react';
 
 // Helper components for cloze questions
@@ -270,7 +276,7 @@ const ClozeEditor = ({ config, onUpdate }) => {
       <div className="bg-blue-50 p-4 rounded-lg">
         <h4 className="text-sm font-medium text-blue-900 mb-2">💡 Tips for Cloze Questions:</h4>
         <ul className="text-sm text-blue-800 space-y-1">
-          <li>• Use {'{{}}'} to create blanks: The {{answer}} is correct</li>
+          <li>• Use {'{{}}'} to create blanks: The {'{{answer}}'} is correct</li>
           <li>• Add multiple correct answers for flexibility</li>
           <li>• Use case-sensitive option for exact matching</li>
           <li>• Keep blanks meaningful and not too obvious</li>
@@ -293,20 +299,26 @@ const FormBuilder = () => {
     questions: [],
     settings: {
       isPublished: false,
-      allowAnonymous: true,
-      collectEmail: false,
+      allowAnonymous: false, // No longer supported
+      collectEmail: true, // Always collect since we have user accounts
       showProgressBar: true,
       deadline: null,
       maxResponses: null,
-      requireSignup: false
+      requireSignup: true, // Always required now
+      allowBackNavigation: true,
+      sendEmailNotifications: false,
+      autoSave: true,
+      randomizeQuestions: false,
+      responseViewAccess: 'creator',
+      themeColor: '#3b82f6',
+      allowMultipleSubmissions: false
     }
   });
 
   const [activeQuestion, setActiveQuestion] = useState(null);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Load existing form if editing
   useEffect(() => {
@@ -488,20 +500,47 @@ const FormBuilder = () => {
     }
   };
 
+  const copyFormLink = () => {
+    if (!id) {
+      toast.error('Please save the form first to get the share link');
+      return;
+    }
+    const link = `${window.location.origin}/form/${id}`;
+    navigator.clipboard.writeText(link);
+    toast.success('Form link copied to clipboard!');
+  };
+
   const publishForm = async () => {
     try {
-      // First save the form
-      await saveForm();
-      
-      // Then publish it
+      // First check if we have questions
       if (form.questions.length === 0) {
         toast.error('Cannot publish form without questions');
         return;
       }
 
-      const formId = id || form._id;
-      if (formId) {
-        const response = await formService.togglePublish(formId, true);
+      // Save the form first if not editing or if changes exist
+      if (!isEditing) {
+        const saveResponse = await formService.createForm(form);
+        if (saveResponse.success) {
+          // Navigate to edit mode with the new form ID
+          const newFormId = saveResponse.data.form._id;
+          
+          // Then publish it
+          const publishResponse = await formService.togglePublish(newFormId, true);
+          if (publishResponse.success) {
+            setForm(prev => ({
+              ...prev,
+              settings: { ...prev.settings, isPublished: true }
+            }));
+            toast.success('Form created and published successfully!');
+            navigate(`/forms/builder/${newFormId}`, { replace: true });
+          }
+        }
+      } else {
+        // Form already exists, save then publish
+        await saveForm();
+        
+        const response = await formService.togglePublish(id, true);
         if (response.success) {
           setForm(prev => ({
             ...prev,
@@ -549,7 +588,9 @@ const FormBuilder = () => {
             <ImageUpload
               currentImage={question.image}
               onImageUpload={(image) => {
-                updateQuestion(question.id, { image });
+                // Extract URL from Cloudinary response object
+                const imageUrl = typeof image === 'string' ? image : image?.secure_url || image?.url;
+                updateQuestion(question.id, { image: imageUrl });
               }}
               className="max-w-md"
             />
@@ -712,8 +753,10 @@ const FormBuilder = () => {
               <ImageUpload
                 currentImage={question.config.questionImage}
                 onImageUpload={(image) => {
+                  // Extract URL from Cloudinary response object
+                  const imageUrl = typeof image === 'string' ? image : image?.secure_url || image?.url;
                   updateQuestion(question.id, {
-                    config: { ...question.config, questionImage: image }
+                    config: { ...question.config, questionImage: imageUrl }
                   });
                 }}
                 className="max-w-md"
@@ -880,6 +923,15 @@ const FormBuilder = () => {
 
             <div className="flex items-center space-x-3">
               <button
+                onClick={copyFormLink}
+                disabled={!id || !form.settings.isPublished}
+                className="flex items-center px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={!id ? "Save form first" : !form.settings.isPublished ? "Publish form to share" : "Copy public link"}
+              >
+                <Share2 className="h-4 w-4 mr-2" />
+                Share
+              </button>
+              <button
                 onClick={() => setShowSettings(true)}
                 className="flex items-center px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
@@ -887,7 +939,15 @@ const FormBuilder = () => {
                 Settings
               </button>
               <button
-                onClick={() => setShowPreview(true)}
+                onClick={() => {
+                  // Pass the current form data to preview (including unsaved changes)
+                  navigate(`/forms/preview/${id || 'new'}`, { 
+                    state: { 
+                      formData: form,
+                      isPreview: true 
+                    } 
+                  });
+                }}
                 className="flex items-center px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
               >
                 <Eye className="h-4 w-4 mr-2" />
@@ -912,7 +972,13 @@ const FormBuilder = () => {
               </button>
               <button
                 onClick={publishForm}
-                className="flex items-center px-4 py-2 bg-gradient-to-r from-blue-500 to-teal-400 text-white rounded-lg hover:shadow-lg transition-all"
+                disabled={form.questions.length === 0}
+                className={`flex items-center px-4 py-2 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                  form.settings.isPublished 
+                    ? 'bg-green-500 text-white hover:bg-green-600' 
+                    : 'bg-gradient-to-r from-blue-500 to-teal-400 text-white hover:shadow-lg'
+                }`}
+                title={form.questions.length === 0 ? "Add questions before publishing" : ""}
               >
                 <Eye className="h-4 w-4 mr-2" />
                 {form.settings.isPublished ? 'Published' : 'Publish'}
@@ -935,7 +1001,9 @@ const FormBuilder = () => {
             <ImageUpload
               currentImage={form.headerImage}
               onImageUpload={(image) => {
-                setForm(prev => ({ ...prev, headerImage: image }));
+                // Extract URL from Cloudinary response object
+                const imageUrl = typeof image === 'string' ? image : image?.secure_url || image?.url;
+                setForm(prev => ({ ...prev, headerImage: imageUrl }));
               }}
               className="max-w-lg"
             />
@@ -1025,6 +1093,247 @@ const FormBuilder = () => {
               </div>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Form Settings Modal */}
+      {showSettings && (
+        <FormSettingsModal
+          form={form}
+          onSave={(settings) => {
+            setForm(prev => ({ ...prev, settings }));
+            setShowSettings(false);
+            toast.success('Settings updated successfully');
+          }}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+    </div>
+  );
+};
+
+// Form Settings Modal Component
+const FormSettingsModal = ({ form, onSave, onClose }) => {
+  const [settings, setSettings] = useState(form.settings);
+
+  const handleSave = () => {
+    onSave(settings);
+  };
+
+  const updateSetting = (key, value) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b border-gray-200">
+          <h2 className="text-xl font-semibold text-gray-900">Form Settings</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X className="h-6 w-6" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Publishing Settings */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-gray-900 flex items-center">
+              <Share2 className="h-5 w-5 mr-2 text-blue-500" />
+              Publishing
+            </h3>
+            
+            <div className="space-y-3">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={settings.isPublished}
+                  onChange={(e) => updateSetting('isPublished', e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-3"
+                />
+                <span className="text-sm font-medium text-gray-700">Publish form publicly</span>
+              </label>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> All forms now require user authentication. Anonymous responses are no longer supported.
+                </p>
+              </div>
+
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={settings.allowMultipleSubmissions}
+                  onChange={(e) => updateSetting('allowMultipleSubmissions', e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-3"
+                />
+                <span className="text-sm font-medium text-gray-700">Allow multiple submissions per user</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Response Collection */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-gray-900 flex items-center">
+              <Users className="h-5 w-5 mr-2 text-green-500" />
+              Response Collection
+            </h3>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <Clock className="h-4 w-4 inline mr-1" />
+                  Response deadline (optional)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={settings.deadline || ''}
+                  onChange={(e) => updateSetting('deadline', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Maximum responses (optional)
+                </label>
+                <input
+                  type="number"
+                  value={settings.maxResponses || ''}
+                  onChange={(e) => updateSetting('maxResponses', e.target.value ? parseInt(e.target.value) : null)}
+                  placeholder="No limit"
+                  min="1"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* User Experience */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-gray-900 flex items-center">
+              <BarChart className="h-5 w-5 mr-2 text-purple-500" />
+              User Experience
+            </h3>
+            
+            <div className="space-y-3">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={settings.showProgressBar}
+                  onChange={(e) => updateSetting('showProgressBar', e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-3"
+                />
+                <span className="text-sm font-medium text-gray-700">Show progress bar</span>
+              </label>
+
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={settings.allowBackNavigation}
+                  onChange={(e) => updateSetting('allowBackNavigation', e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-3"
+                />
+                <span className="text-sm font-medium text-gray-700">Allow back navigation</span>
+              </label>
+
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={settings.randomizeQuestions}
+                  onChange={(e) => updateSetting('randomizeQuestions', e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-3"
+                />
+                <span className="text-sm font-medium text-gray-700">Randomize question order</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Notifications */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-gray-900 flex items-center">
+              <Mail className="h-5 w-5 mr-2 text-orange-500" />
+              Notifications
+            </h3>
+            
+            <div className="space-y-3">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={settings.sendEmailNotifications}
+                  onChange={(e) => updateSetting('sendEmailNotifications', e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-3"
+                />
+                <span className="text-sm font-medium text-gray-700">Email me when someone responds</span>
+              </label>
+
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={settings.autoSave}
+                  onChange={(e) => updateSetting('autoSave', e.target.checked)}
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-3"
+                />
+                <span className="text-sm font-medium text-gray-700">Auto-save responses</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Access Control */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-medium text-gray-900 flex items-center">
+              <Lock className="h-5 w-5 mr-2 text-red-500" />
+              Access Control
+            </h3>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Who can view responses
+              </label>
+              <select
+                value={settings.responseViewAccess}
+                onChange={(e) => updateSetting('responseViewAccess', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="creator">Only me (form creator)</option>
+                <option value="collaborators">Me and collaborators</option>
+                <option value="public">Anyone with the link</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Theme color
+              </label>
+              <div className="flex space-x-2">
+                {['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'].map(color => (
+                  <button
+                    key={color}
+                    onClick={() => updateSetting('themeColor', color)}
+                    className={`w-8 h-8 rounded-full border-2 ${settings.themeColor === color ? 'border-gray-400' : 'border-gray-200'}`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end space-x-3 p-6 border-t border-gray-200">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Save Settings
+          </button>
         </div>
       </div>
     </div>

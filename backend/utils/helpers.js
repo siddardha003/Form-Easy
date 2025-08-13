@@ -55,6 +55,15 @@ export const getTimeDifference = (date1, date2 = new Date()) => {
 // Validate question configuration based on type
 export const validateQuestionConfig = (type, config) => {
   switch (type) {
+    case 'mcq':
+    case 'mca':
+      return (
+        config.options &&
+        Array.isArray(config.options) &&
+        config.options.length > 0 &&
+        config.options.every(option => option && typeof option === 'object' && option.text)
+      );
+    
     case 'categorize':
       return (
         config.categories &&
@@ -69,9 +78,8 @@ export const validateQuestionConfig = (type, config) => {
       return (
         config.text &&
         typeof config.text === 'string' &&
-        config.blanks &&
-        Array.isArray(config.blanks) &&
-        config.blanks.length > 0
+        config.text.includes('{{') && 
+        config.text.includes('}}')
       );
     
     case 'comprehension':
@@ -81,6 +89,12 @@ export const validateQuestionConfig = (type, config) => {
         config.subQuestions &&
         Array.isArray(config.subQuestions) &&
         config.subQuestions.length > 0
+      );
+    
+    case 'image':
+      return (
+        config.imageUrl ||
+        (config.question && typeof config.question === 'string')
       );
     
     default:

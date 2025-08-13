@@ -1,6 +1,97 @@
 import React, { useState, useEffect } from 'react';
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { Trash2, Plus, Palette } from 'lucide-react';
+
+// Simple drag and drop implementation for React 19 compatibility
+const DraggableItem = ({ item, onDragStart, onDragEnd, disabled = false, categoryColor = null }) => {
+  const handleDragStart = (e) => {
+    if (disabled) {
+      e.preventDefault();
+      return;
+    }
+    console.log('DragStart event for:', item.text);
+    e.dataTransfer.setData('text/plain', item.id);
+    e.dataTransfer.effectAllowed = 'move';
+    onDragStart?.(item);
+  };
+
+  const handleDragEnd = (e) => {
+    if (disabled) return;
+    console.log('DragEnd event for:', item.text);
+    onDragEnd?.();
+  };
+
+  return (
+    <div
+      draggable={!disabled}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      className={`px-3 py-2 bg-white border rounded-lg shadow-sm transition-all select-none ${
+        disabled 
+          ? 'cursor-default opacity-60' 
+          : 'cursor-grab hover:shadow-md active:cursor-grabbing hover:scale-105'
+      }`}
+      style={{ 
+        borderColor: categoryColor || '#d1d5db',
+        borderWidth: categoryColor ? '2px' : '1px'
+      }}
+    >
+      {item.text}
+    </div>
+  );
+};
+
+// Droppable zone component
+const DroppableZone = ({ 
+  children, 
+  onDrop, 
+  onDragOver, 
+  onDragLeave,
+  className = '', 
+  style = {},
+  disabled = false,
+  isDragOver = false
+}) => {
+  const handleDragOver = (e) => {
+    if (disabled) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    console.log('DragOver event');
+    onDragOver?.(e);
+  };
+
+  const handleDrop = (e) => {
+    if (disabled) return;
+    e.preventDefault();
+    const itemId = e.dataTransfer.getData('text/plain');
+    console.log('Drop event, itemId:', itemId);
+    onDrop?.(itemId, e);
+  };
+
+  const handleDragLeave = (e) => {
+    if (disabled) return;
+    console.log('DragLeave event');
+    onDragLeave?.(e);
+  };
+
+  const handleDragEnter = (e) => {
+    if (disabled) return;
+    e.preventDefault();
+    console.log('DragEnter event');
+  };
+
+  return (
+    <div
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      onDragLeave={handleDragLeave}
+      onDragEnter={handleDragEnter}
+      className={`${className} ${isDragOver ? 'bg-opacity-30' : ''}`}
+      style={style}
+    >
+      {children}
+    </div>
+  );
+};
 
 // Component for the form builder - editing categories and items
 export const CategorizeQuestionBuilder = ({ config, onUpdate }) => {
@@ -213,22 +304,29 @@ export const CategorizeQuestionPreview = ({ categories, items, onResponseChange,
     return uncategorizedItems;
   });
 
-  const handleDragEnd = (result) => {
-    if (disabled) return;
+  const [draggedItem, setDraggedItem] = useState(null);
+  const [dragOverZone, setDragOverZone] = useState(null);
+
+  const handleDragStart = (item) => {
+    console.log('Drag started:', item.text);
+    setDraggedItem(item);
+  };
+
+  const handleDragEnd = () => {
+    console.log('Drag ended');
+    setDraggedItem(null);
+    setDragOverZone(null);
+  };
+
+  const handleDrop = (itemId, targetZone) => {
+    console.log('Drop:', itemId, 'to zone:', targetZone);
+    if (disabled || !itemId) return;
+
+    const newCategory = targetZone === 'uncategorized' ? null : targetZone;
     
-    const { destination, source, draggableId } = result;
-
-    if (!destination) return;
-
-    // If dropped in same position, do nothing
-    if (destination.droppableId === source.droppableId && destination.index === source.index) {
-      return;
-    }
-
     // Update the item's category
     const newItems = localItems.map(item => {
-      if (item.id === draggableId) {
-        const newCategory = destination.droppableId === 'uncategorized' ? null : destination.droppableId;
+      if (item.id === itemId) {
         onResponseChange?.(item.id, newCategory);
         return { ...item, currentCategory: newCategory };
       }
@@ -236,6 +334,16 @@ export const CategorizeQuestionPreview = ({ categories, items, onResponseChange,
     });
 
     setLocalItems(newItems);
+    setDragOverZone(null);
+  };
+
+  const handleDragOver = (zone) => {
+    console.log('Drag over zone:', zone);
+    setDragOverZone(zone);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverZone(null);
   };
 
   const getItemsForCategory = (categoryId) => {
@@ -247,117 +355,83 @@ export const CategorizeQuestionPreview = ({ categories, items, onResponseChange,
   };
 
   return (
-    <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="space-y-4">
-        {/* Items Pool */}
-        <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
-          <h5 className="font-medium text-gray-700 mb-3">Items to Categorize:</h5>
-          <Droppable droppableId="uncategorized" direction="horizontal">
-            {(provided, snapshot) => (
-              <div
-                ref={provided.innerRef}
-                {...provided.droppableProps}
-                className={`flex flex-wrap gap-2 min-h-[60px] p-2 rounded-lg transition-colors ${
-                  snapshot.isDraggingOver ? 'bg-gray-100' : 'bg-gray-50'
-                }`}
-              >
-                {getUncategorizedItems().map((item, index) => (
-                  <Draggable
+    <div className="space-y-4">
+      {/* Items Pool */}
+      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
+        <h5 className="font-medium text-gray-700 mb-3">Items to Categorize:</h5>
+        <DroppableZone
+          onDrop={(itemId) => handleDrop(itemId, 'uncategorized')}
+          onDragOver={() => handleDragOver('uncategorized')}
+          onDragLeave={handleDragLeave}
+          disabled={disabled}
+          isDragOver={dragOverZone === 'uncategorized'}
+          className={`flex flex-wrap gap-2 min-h-[60px] p-2 rounded-lg transition-all ${
+            dragOverZone === 'uncategorized' ? 'bg-gray-200' : 'bg-gray-50'
+          }`}
+        >
+          {getUncategorizedItems().map((item) => (
+            <DraggableItem
+              key={item.id}
+              item={item}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+              disabled={disabled}
+            />
+          ))}
+          {getUncategorizedItems().length === 0 && (
+            <div className="text-gray-400 italic text-sm py-4 w-full text-center">
+              {disabled ? 'All items categorized' : 'Drag items here to uncategorize them'}
+            </div>
+          )}
+        </DroppableZone>
+      </div>
+
+      {/* Category Drop Zones */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {categories?.map(category => (
+          <div key={category.id} className="border-2 border-dashed rounded-lg p-4" style={{ borderColor: category.color }}>
+            <h5 className="font-medium mb-3" style={{ color: category.color }}>
+              {category.label}
+            </h5>
+            <DroppableZone
+              onDrop={(itemId) => handleDrop(itemId, category.id)}
+              onDragOver={() => handleDragOver(category.id)}
+              onDragLeave={handleDragLeave}
+              disabled={disabled}
+              isDragOver={dragOverZone === category.id}
+              className={`min-h-[100px] p-2 rounded-lg transition-all ${
+                dragOverZone === category.id 
+                  ? 'bg-opacity-30' 
+                  : 'bg-opacity-10'
+              }`}
+              style={{ 
+                backgroundColor: dragOverZone === category.id 
+                  ? category.color + '50' 
+                  : category.color + '20' 
+              }}
+            >
+              <div className="space-y-2">
+                {getItemsForCategory(category.id).map((item) => (
+                  <DraggableItem
                     key={item.id}
-                    draggableId={item.id}
-                    index={index}
-                    isDragDisabled={disabled}
-                  >
-                    {(provided, snapshot) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.draggableProps}
-                        {...provided.dragHandleProps}
-                        className={`px-3 py-2 bg-white border border-gray-300 rounded-lg shadow-sm cursor-move transition-all ${
-                          snapshot.isDragging 
-                            ? 'shadow-lg transform rotate-2 opacity-90' 
-                            : 'hover:shadow-md'
-                        } ${disabled ? 'cursor-default opacity-60' : ''}`}
-                      >
-                        {item.text}
-                      </div>
-                    )}
-                  </Draggable>
+                    item={item}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    disabled={disabled}
+                    categoryColor={category.color}
+                  />
                 ))}
-                {provided.placeholder}
-                {getUncategorizedItems().length === 0 && (
-                  <div className="text-gray-400 italic text-sm py-4">
-                    {disabled ? 'All items categorized' : 'Drag items here to uncategorize them'}
+                {getItemsForCategory(category.id).length === 0 && (
+                  <div className="text-gray-400 italic text-sm py-8 text-center">
+                    Drop items here
                   </div>
                 )}
               </div>
-            )}
-          </Droppable>
-        </div>
-
-        {/* Category Drop Zones */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {categories?.map(category => (
-            <div key={category.id} className="border-2 border-dashed rounded-lg p-4" style={{ borderColor: category.color }}>
-              <h5 className="font-medium mb-3" style={{ color: category.color }}>
-                {category.label}
-              </h5>
-              <Droppable droppableId={category.id}>
-                {(provided, snapshot) => (
-                  <div
-                    ref={provided.innerRef}
-                    {...provided.droppableProps}
-                    className={`min-h-[100px] p-2 rounded-lg transition-colors ${
-                      snapshot.isDraggingOver 
-                        ? 'bg-opacity-20' 
-                        : 'bg-opacity-10'
-                    }`}
-                    style={{ 
-                      backgroundColor: snapshot.isDraggingOver 
-                        ? category.color + '40' 
-                        : category.color + '20' 
-                    }}
-                  >
-                    <div className="space-y-2">
-                      {getItemsForCategory(category.id).map((item, index) => (
-                        <Draggable
-                          key={item.id}
-                          draggableId={item.id}
-                          index={index}
-                          isDragDisabled={disabled}
-                        >
-                          {(provided, snapshot) => (
-                            <div
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              className={`px-3 py-2 bg-white border rounded-lg shadow-sm cursor-move transition-all ${
-                                snapshot.isDragging 
-                                  ? 'shadow-lg transform rotate-2 opacity-90' 
-                                  : 'hover:shadow-md'
-                              } ${disabled ? 'cursor-default opacity-60' : ''}`}
-                              style={{ borderColor: category.color }}
-                            >
-                              {item.text}
-                            </div>
-                          )}
-                        </Draggable>
-                      ))}
-                    </div>
-                    {provided.placeholder}
-                    {getItemsForCategory(category.id).length === 0 && (
-                      <div className="text-gray-400 italic text-sm py-8 text-center">
-                        Drop items here
-                      </div>
-                    )}
-                  </div>
-                )}
-              </Droppable>
-            </div>
-          ))}
-        </div>
+            </DroppableZone>
+          </div>
+        ))}
       </div>
-    </DragDropContext>
+    </div>
   );
 };
 

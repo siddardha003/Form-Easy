@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight } from 'lucide-react';
 
 const Signup = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { register, loading, error, clearError } = useAuth();
   const [formData, setFormData] = useState({
     firstName: '',
@@ -14,6 +15,10 @@ const Signup = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Get redirect URL from query params
+  const searchParams = new URLSearchParams(location.search);
+  const redirectUrl = searchParams.get('redirect');
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -30,7 +35,9 @@ const Signup = () => {
     
     try {
       await register(formData);
-      navigate('/dashboard');
+      // Redirect to the original URL if available, otherwise go to dashboard
+      const targetUrl = redirectUrl ? decodeURIComponent(redirectUrl) : '/dashboard';
+      navigate(targetUrl);
     } catch (error) {
       // Error is handled by auth context
     } finally {

@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { formService } from '../services/formService';
 import { CategorizeQuestionPreview } from '../components/CategorizeQuestion';
 import { ComprehensionQuestionPreview } from '../components/ComprehensionQuestion';
+import { useAuth } from '../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { 
   CheckCircle,
@@ -37,7 +38,30 @@ const PublicForm = () => {
         // Initialize responses object
         const initialResponses = {};
         response.data.form.questions.forEach(q => {
-          initialResponses[q.id] = q.type === 'mca' ? [] : '';
+          if (q.type === 'mca') {
+            initialResponses[q.id] = [];
+          } else if (q.type === 'cloze') {
+            // Initialize for all blanks in cloze questions
+            const text = q.config?.text || '';
+            const blanks = text.match(/\{\{[^}]+\}\}/g) || [];
+            blanks.forEach((_, index) => {
+              initialResponses[`${q.id}-blank-${index}`] = '';
+            });
+          } else if (q.type === 'categorize') {
+            // Initialize for all items in categorize questions
+            const items = q.config?.items || [];
+            items.forEach(item => {
+              initialResponses[`${q.id}-${item.id}`] = '';
+            });
+          } else if (q.type === 'comprehension') {
+            // Initialize for all sub-questions in comprehension questions
+            const subQuestions = q.config?.subQuestions || [];
+            subQuestions.forEach(subQ => {
+              initialResponses[`${q.id}-${subQ.id}`] = subQ.type === 'mca' ? [] : '';
+            });
+          } else {
+            initialResponses[q.id] = '';
+          }
         });
         setResponses(initialResponses);
       }
@@ -65,14 +89,61 @@ const PublicForm = () => {
 
   const validateResponses = () => {
     const newErrors = {};
+    
     form.questions.forEach(question => {
       if (question.required) {
-        const response = responses[question.id];
-        if (!response || (Array.isArray(response) && response.length === 0)) {
+        let isValid = false;
+        
+        switch (question.type) {
+          case 'mcq':
+            isValid = responses[question.id] && responses[question.id].trim() !== '';
+            break;
+            
+          case 'mca':
+            isValid = Array.isArray(responses[question.id]) && responses[question.id].length > 0;
+            break;
+            
+          case 'cloze':
+            // Check all blanks are filled
+            const text = question.config?.text || '';
+            const blanks = text.match(/\{\{[^}]+\}\}/g) || [];
+            isValid = blanks.every((_, index) => {
+              const blankResponse = responses[`${question.id}-blank-${index}`];
+              return blankResponse && blankResponse.trim() !== '';
+            });
+            break;
+            
+          case 'categorize':
+            // Check all items are categorized
+            const items = question.config?.items || [];
+            isValid = items.every(item => {
+              const itemResponse = responses[`${question.id}-${item.id}`];
+              return itemResponse && itemResponse.trim() !== '';
+            });
+            break;
+            
+          case 'comprehension':
+            // Check all sub-questions are answered
+            const subQuestions = question.config?.subQuestions || [];
+            isValid = subQuestions.every(subQ => {
+              const subResponse = responses[`${question.id}-${subQ.id}`];
+              if (subQ.type === 'mca') {
+                return Array.isArray(subResponse) && subResponse.length > 0;
+              }
+              return subResponse && subResponse.trim() !== '';
+            });
+            break;
+            
+          default:
+            isValid = responses[question.id] && responses[question.id].toString().trim() !== '';
+        }
+        
+        if (!isValid) {
           newErrors[question.id] = 'This field is required';
         }
       }
     });
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -85,14 +156,119 @@ const PublicForm = () => {
 
     try {
       setSubmitting(true);
-      const response = await formService.submitResponse(id, responses);
+      
+      // Transform responses to the format expected by backend
+      const answers = [];
+      
+      form.questions.forEach(question => {
+        switch (question.type) {
+          case 'mcq':
+            if (responses[question.id]) {
+              answers.push({
+                questionId: question.id,
+                answer: responses[question.id]
+              });
+            }
+            break;
+            
+          case 'mca':
+            if (responses[question.id] && responses[question.id].length > 0) {
+              answers.push({
+                questionId: question.id,
+                answer: responses[question.id]
+              });
+            }
+            break;
+            
+          case 'cloze':
+            // Collect all blank answers
+            const text = question.config?.text || '';
+            const blanks = text.match(/\{\{[^}]+\}\}/g) || [];
+            const blankAnswers = {};
+            blanks.forEach((_, index) => {
+              const blankResponse = responses[`${question.id}-blank-${index}`];
+              if (blankResponse) {
+                blankAnswers[`blank-${index}`] = blankResponse;
+              }
+            });
+            if (Object.keys(blankAnswers).length > 0) {
+              answers.push({
+                questionId: question.id,
+                answer: blankAnswers
+              });
+            }
+            break;
+            
+          case 'categorize':
+            // Collect all item categorizations
+            const items = question.config?.items || [];
+            const categorizations = {};
+            items.forEach(item => {
+              const itemResponse = responses[`${question.id}-${item.id}`];
+              if (itemResponse) {
+                categorizations[item.id] = itemResponse;
+              }
+            });
+            if (Object.keys(categorizations).length > 0) {
+              answers.push({
+                questionId: question.id,
+                answer: categorizations
+              });
+            }
+            break;
+            
+          case 'comprehension':
+            // Collect all sub-question answers
+            const subQuestions = question.config?.subQuestions || [];
+            const subAnswers = {};
+            subQuestions.forEach(subQ => {
+              const subResponse = responses[`${question.id}-${subQ.id}`];
+              if (subResponse) {
+                subAnswers[subQ.id] = subResponse;
+              }
+            });
+            if (Object.keys(subAnswers).length > 0) {
+              answers.push({
+                questionId: question.id,
+                answer: subAnswers
+              });
+            }
+            break;
+            
+          default:
+            if (responses[question.id]) {
+              answers.push({
+                questionId: question.id,
+                answer: responses[question.id]
+              });
+            }
+        }
+      });
+      
+      const responseData = {
+        formId: id,
+        answers: answers,
+        startedAt: new Date().toISOString(),
+        totalTimeSpent: 0 // You can implement time tracking if needed
+      };
+      
+      console.log('📤 Submitting response data:', responseData);
+      console.log('🔑 Token in localStorage:', localStorage.getItem('token') ? 'Present' : 'Missing');
+      
+      const response = await formService.submitResponse(responseData);
       if (response.success) {
         setSubmitted(true);
         toast.success('Response submitted successfully!');
+      } else {
+        toast.error(response.error?.message || 'Failed to submit response');
       }
     } catch (error) {
-      console.error('Error submitting response:', error);
-      toast.error('Failed to submit response');
+      console.error('💥 Error submitting response:', error);
+      if (error.response?.data?.error?.message) {
+        toast.error(error.response.data.error.message);
+      } else {
+        toast.error('Failed to submit response');
+      }
     } finally {
       setSubmitting(false);
     }

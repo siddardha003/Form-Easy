@@ -10,12 +10,13 @@ import { authenticate, optionalAuth } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Public route for submitting responses
-router.post('/', optionalAuth, validateResponse, submitResponse);
-
-// Protected routes for viewing/managing responses
+// All routes now require authentication
 router.use(authenticate);
 
+// Route for submitting responses (now requires authentication)
+router.post('/', validateResponse, submitResponse);
+
+// Routes for viewing/managing responses
 router.get('/:id', getResponse);
 router.delete('/:id', deleteResponse);
 

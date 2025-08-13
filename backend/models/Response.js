@@ -9,7 +9,7 @@ const answerSchema = new mongoose.Schema({
   questionType: {
     type: String,
     required: true,
-    enum: ['categorize', 'cloze', 'comprehension']
+    enum: ['mcq', 'mca', 'categorize', 'cloze', 'comprehension', 'image']
   },
   answer: {
     type: mongoose.Schema.Types.Mixed,
@@ -18,15 +18,24 @@ const answerSchema = new mongoose.Schema({
       validator: function(answer) {
         // Validate answer structure based on question type
         switch (this.questionType) {
+          case 'mcq':
+            // Answer should be a string (selected option ID)
+            return typeof answer === 'string';
+          case 'mca':
+            // Answer should be an array of selected option IDs
+            return Array.isArray(answer);
           case 'categorize':
             // Answer should be an object mapping item IDs to category IDs
             return typeof answer === 'object' && answer !== null;
           case 'cloze':
-            // Answer should be an array of blank responses
-            return Array.isArray(answer);
+            // Answer should be an object with blank responses (blank-0, blank-1, etc.)
+            return typeof answer === 'object' && answer !== null;
           case 'comprehension':
             // Answer should be an object with sub-question responses
             return typeof answer === 'object' && answer !== null;
+          case 'image':
+            // Answer could be text or file reference
+            return typeof answer === 'string' || typeof answer === 'object';
           default:
             return false;
         }
@@ -58,21 +67,27 @@ const responseSchema = new mongoose.Schema({
     ref: 'Form',
     required: true
   },
-  // Respondent information
+  // User who submitted the response (now required)
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  // Respondent information (from user account)
   respondentEmail: {
     type: String,
+    required: true,
     lowercase: true,
     match: [
       /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
       'Please enter a valid email'
-    ],
-    default: null
+    ]
   },
   respondentName: {
     type: String,
+    required: true,
     trim: true,
-    maxlength: [100, 'Name cannot exceed 100 characters'],
-    default: null
+    maxlength: [100, 'Name cannot exceed 100 characters']
   },
   // Response data
   answers: [answerSchema],
@@ -143,6 +158,8 @@ responseSchema.virtual('duration').get(function() {
 
 // Indexes for performance
 responseSchema.index({ formId: 1, submittedAt: -1 });
+responseSchema.index({ userId: 1, submittedAt: -1 });
+responseSchema.index({ formId: 1, userId: 1 }); // For checking if user already submitted
 responseSchema.index({ respondentEmail: 1 });
 responseSchema.index({ submittedAt: -1 });
 

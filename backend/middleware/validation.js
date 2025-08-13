@@ -92,9 +92,6 @@ export const validateResponse = [
   body('answers.*.questionId')
     .notEmpty()
     .withMessage('Question ID is required for each answer'),
-  body('answers.*.questionType')
-    .isIn(['categorize', 'cloze', 'comprehension'])
-    .withMessage('Question type must be categorize, cloze, or comprehension'),
   handleValidationErrors
 ];
 
