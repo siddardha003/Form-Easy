@@ -57,17 +57,59 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({
     success: true,
     message: 'Form Builder API is running',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    routes: {
+      auth: !!authRoutes,
+      forms: !!formRoutes,
+      public: !!publicRoutes
+    }
   });
 });
 
+// Debug endpoint to list all routes
+app.get('/api/debug/routes', (req, res) => {
+  const routes = [];
+  app._router.stack.forEach((middleware) => {
+    if (middleware.route) {
+      routes.push({
+        path: middleware.route.path,
+        methods: Object.keys(middleware.route.methods)
+      });
+    } else if (middleware.name === 'router') {
+      middleware.handle.stack.forEach((handler) => {
+        if (handler.route) {
+          routes.push({
+            path: handler.route.path,
+            methods: Object.keys(handler.route.methods)
+          });
+        }
+      });
+    }
+  });
+  res.json({ routes });
+});
+
+// Debug: Log all registered routes
+console.log('🔧 Registering routes...');
+
 // API Routes
 app.use('/api/auth', authRoutes);
+console.log('✅ Auth routes registered');
+
 app.use('/api/forms', formRoutes);
+console.log('✅ Form routes registered');
+
 app.use('/api/public', publicRoutes);
+console.log('✅ Public routes registered');
+
 app.use('/api/responses', responseRoutes);
+console.log('✅ Response routes registered');
+
 app.use('/api/upload', uploadRoutes);
+console.log('✅ Upload routes registered');
+
 app.use('/api/images', imageUploadRoutes);
+console.log('✅ Image routes registered');
 
 // Error handling middleware
 app.use(errorHandler);
