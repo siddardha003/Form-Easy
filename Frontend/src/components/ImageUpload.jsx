@@ -19,7 +19,7 @@ const ImageUpload = ({
     formData.append('image', file);
 
     const token = localStorage.getItem('token');
-    const response = await fetch('http://localhost:5000/api/images/image', {
+    const response = await fetch('https://form-easy-production.up.railway.app/api/images/image', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`
